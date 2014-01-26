@@ -69,9 +69,10 @@ test("will unwrap the 'default' export automatically", function(){
 test("router:main is hard-coded to prefix/router.js", function() {
   expect(1);
 
-  define('appkit/router', [], function(){
-    ok(true, 'router:main was looked up');
-    return 'whatever';
+  define('appkit/router', [], function(){    
+    return function() {
+      ok(true, 'router:main was looked up');
+    };
   });
 
   resolver.resolve('router:main');
@@ -227,4 +228,26 @@ test("will not use custom type prefix when using POD format", function() {
   });
 
   resolver.resolve('controller:foo');
+});
+
+module("namespace array", {
+  setup: function() {
+    setupResolver({
+      namespace: {
+        modulePrefixes: ['app1','app2']
+      }
+    });
+  },
+
+  teardown: resetRegistry
+});
+
+test("will lookup names within namespace array", function() {
+
+  define('app2/controllers/foo/index', [], function(){
+    ok(true, 'app2/controllers was used');
+    return 'whatever';
+  });
+
+  resolver.resolve('controller:foo/index');
 });

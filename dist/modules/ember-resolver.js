@@ -79,43 +79,133 @@ define("resolver",
     }
   }
 
+  function resolveRouter(parsedName) {
+    /*jshint validthis:true */
+
+    var moduleName, tmpModuleName, prefixes, podPrefixes, moduleRegistry, _routers = [], router, prefix;
+
+    prefixes = this.namespace.modulePrefix || this.namespace.modulePrefixes;
+    podPrefixes = this.namespace.podModulePrefix || this.namespace.podModulePrefixes || prefixes;
+    if(typeof prefixes === "string") {
+      prefixes = [prefixes];
+    }    
+    if(typeof podPrefixes === "string") {
+      podPrefixes = [podPrefixes];
+    }
+
+    moduleRegistry = requirejs._eak_seen;
+
+    var pluralizedType = parsedName.type + 's';
+    var name = parsedName.fullNameWithoutType;
+
+    Ember.assert('module prefix must be defined', prefixes);
+    var Router = Ember.Router.extend();
+
+    for(var p = 0; p < podPrefixes.length; p++) {
+      // POD format
+      tmpModuleName = podPrefixes[p] + "/" + parsedName.fullNameWithoutType + "/" + parsedName.type;
+      if(moduleRegistry[tmpModuleName]) {
+        router = require(tmpModuleName, null, null, true /* force sync */);
+        if(router && router["default"]) { router = router["default"];}
+        if(router) { _routers.push(router);}
+      }
+    }
+
+    if(!moduleName && name === 'main') {
+      for(p = 0; p < prefixes.length; p++) {
+        tmpModuleName = prefixes[p] + '/' + parsedName.type;
+        if (moduleRegistry[tmpModuleName]) {
+          router = require(tmpModuleName, null, null, true /* force sync */);
+          if(router && router["default"]) { router = router["default"];}
+          if(router) { _routers.push(router);}
+        }
+      }
+    }
+
+    for(p = 0; p < prefixes.length; p++) {
+      tmpModuleName = prefixes[p] + "/" + pluralizedType + "/" + parsedName.fullNameWithoutType;
+      if(moduleRegistry[tmpModuleName]) {
+        router = require(tmpModuleName, null, null, true /* force sync */);
+        if(router && router["default"]) { router = router["default"];}
+        if(router) {
+          _routers.push(router);
+        }
+      }
+    }
+
+    Router.map(function() {
+      for(var r = 0; r < _routers.length; r++) {
+        _routers[r].apply(this);
+      }      
+    });
+
+    return Router;
+  }
+
   function resolveOther(parsedName) {
     /*jshint validthis:true */
 
-    var moduleName, tmpModuleName, prefix, podPrefix, moduleRegistry;
+    var moduleName, tmpModuleName, prefixes, podPrefixes, moduleRegistry, normalizedModuleName, prefix, podPrefix;
 
-    prefix = this.namespace.modulePrefix;
-    podPrefix = this.namespace.podModulePrefix || prefix;
-    moduleRegistry = requirejs._eak_seen;
+    prefixes = this.namespace.modulePrefix || this.namespace.modulePrefixes;
+    podPrefixes = this.namespace.podModulePrefix || this.namespace.podModulePrefixes || prefixes;
 
-    Ember.assert('module prefix must be defined', prefix);
+    if(typeof prefixes === "string") {
+      prefixes = [prefixes];
+    }    
+    if(typeof podPrefixes === "string") {
+      podPrefixes = [podPrefixes];
+    }
+
+    moduleRegistry = requirejs._eak_seen;    
+
+    Ember.assert('module prefix must be defined', prefixes);
 
     var pluralizedType = parsedName.type + 's';
     var name = parsedName.fullNameWithoutType;
 
     // lookup using POD formatting first
-    tmpModuleName = podPrefix + '/' + name + '/' + parsedName.type;
-    if (moduleRegistry[tmpModuleName]) {
-      moduleName = tmpModuleName;
+    for(var p =0; p < podPrefixes.length; p++) {
+      podPrefix = podPrefixes[p];
+      tmpModuleName = podPrefix + '/' + name + '/' + parsedName.type;
+      if (moduleRegistry[tmpModuleName]) {
+        moduleName = tmpModuleName;
+        break;
+      }
     }
 
     // if not using POD format, use the custom prefix
     if (this.namespace[parsedName.type + 'Prefix']) {
-      prefix = this.namespace[parsedName.type + 'Prefix'];
+      prefixes = [this.namespace[parsedName.type + 'Prefix']];
     }
 
     // if router:main or adapter:main look for a module with just the type first
-    tmpModuleName = prefix + '/' + parsedName.type;
-    if (!moduleName && name === 'main' && moduleRegistry[tmpModuleName]) {
-      moduleName = prefix + '/' + parsedName.type;
+    if(!moduleName && name === 'main') {
+      for(p = 0; p < prefixes.length; p++) {
+        prefix = prefixes[p];
+        tmpModuleName = prefix + '/' + parsedName.type;
+        if (moduleRegistry[tmpModuleName]) {
+          moduleName = prefix + '/' + parsedName.type;
+          break;
+        }
+      }
     }
 
     // fallback if not type:main or POD format
-    if (!moduleName) { moduleName = prefix + '/' +  pluralizedType + '/' + name; }
-
-    // allow treat all dashed and all underscored as the same thing
-    // supports components with dashes and other stuff with underscores.
-    var normalizedModuleName = chooseModuleName(moduleRegistry, moduleName);
+    if (!moduleName) { 
+      for(p = 0; p < prefixes.length; p++) {
+        prefix = prefixes[p];
+        moduleName = prefix + '/' +  pluralizedType + '/' + name;
+        normalizedModuleName = chooseModuleName(moduleRegistry, moduleName);
+        if(moduleRegistry[normalizedModuleName]) {
+          break;
+        }
+      }
+    } else {
+      // allow treat all dashed and all underscored as the same thing
+      // supports components with dashes and other stuff with underscores.
+      normalizedModuleName = chooseModuleName(moduleRegistry, moduleName);
+    }    
 
     if (moduleRegistry[normalizedModuleName]) {
       var module = require(normalizedModuleName, null, null, true /* force sync */);
@@ -131,17 +221,16 @@ define("resolver",
       }
 
       logLookup(true, parsedName, moduleName);
-
       return module;
-    } else {
-      logLookup(false, parsedName, moduleName);
-
-      return this._super(parsedName);
-    }
+    } 
+      
+    logLookup(false, parsedName, moduleName);
+    return this._super(parsedName);
   }
   // Ember.DefaultResolver docs:
   //   https://github.com/emberjs/ember.js/blob/master/packages/ember-application/lib/system/resolver.js
   var Resolver = Ember.DefaultResolver.extend({
+    resolveRouter: resolveRouter,
     resolveTemplate: resolveOther,
     resolveOther: resolveOther,
     makeToString: function(factory, fullName) {
