@@ -152,6 +152,77 @@ define("resolver",
     return Router;
   }
 
+  function resolveMenu(parsedName) {
+    /*jshint validthis:true */
+
+    var moduleName, tmpModuleName, prefixes, podPrefixes, moduleRegistry, _menus = [], menu, prefix;
+
+    prefixes = this.namespace.modulePrefix || this.namespace.modulePrefixes;
+    podPrefixes = this.namespace.podModulePrefix || this.namespace.podModulePrefixes || prefixes;
+    if(typeof prefixes === "string") {
+      prefixes = [prefixes];
+    }    
+    if(typeof podPrefixes === "string") {
+      podPrefixes = [podPrefixes];
+    }
+
+    moduleRegistry = requirejs._eak_seen;
+
+    var pluralizedType = parsedName.type + 's';
+    var name = parsedName.fullNameWithoutType;
+
+    Ember.assert('module prefix must be defined', prefixes);
+
+    for(var p = 0; p < podPrefixes.length; p++) {
+      // POD format
+      tmpModuleName = podPrefixes[p] + "/" + parsedName.fullNameWithoutType + "/" + parsedName.type;
+      if(moduleRegistry[tmpModuleName]) {
+        menu = require(tmpModuleName, null, null, true /* force sync */);
+        if(menu && menu["default"]) { menu = menu["default"];}
+        if(menu) { _menus.push(menu);}
+      }
+    }
+
+    if(!moduleName && name === 'main') {
+      for(p = 0; p < prefixes.length; p++) {
+        tmpModuleName = prefixes[p] + '/' + parsedName.type;
+        if (moduleRegistry[tmpModuleName]) {
+          menu = require(tmpModuleName, null, null, true /* force sync */);
+          if(menu && menu["default"]) { menu = menu["default"];}
+          if(menu) { _menus.push(menu);}
+        }
+      }
+    }
+
+    for(p = 0; p < prefixes.length; p++) {
+      tmpModuleName = prefixes[p] + "/" + pluralizedType + "/" + parsedName.fullNameWithoutType;
+      if(moduleRegistry[tmpModuleName]) {
+        menu = require(tmpModuleName, null, null, true /* force sync */);
+        if(menu && menu["default"]) { menu = menu["default"];}
+        if(menu) {
+          _menus.push(menu);
+        }
+      }
+    }
+
+    var Menu = Ember.Object.extend();
+
+    var _result = [];
+    _menus.forEach(function(_m) {
+        _m = _m.create({});
+        _m.get("items").forEach(function(_item) {_result.push(_item);});
+    });
+
+    _result.sort(function(a,b){return a.get("sort") - b.get("sort");});
+
+    Menu.reopen({
+      "menu-items": Em.A(_result)
+    });
+      
+
+    return Menu;
+  }
+
   function resolveOther(parsedName) {
     /*jshint validthis:true */
 
@@ -242,6 +313,7 @@ define("resolver",
   var Resolver = Ember.DefaultResolver.extend({
     resolveRouter: resolveRouter,
     resolveTemplate: resolveOther,
+    resolveMenu: resolveMenu,
     resolveOther: resolveOther,
     makeToString: function(factory, fullName) {
       return '' + this.namespace.modulePrefix + '@' + fullName + ':';
