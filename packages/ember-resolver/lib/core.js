@@ -239,6 +239,72 @@ define("ember/resolver",
     return Menu;
   }
 
+  function resolveString(parsedName) {
+    /*jshint validthis:true */
+
+    var l, moduleName, tmpModuleName, prefixes, podPrefixes, moduleEntries, _strs = [], str, prefix;
+
+    prefixes = this.namespace.modulePrefix || this.namespace.modulePrefixes;
+    podPrefixes = this.namespace.podModulePrefix || this.namespace.podModulePrefixes || prefixes;
+    if(typeof prefixes === "string") {
+      prefixes = [prefixes];
+    }    
+    if(typeof podPrefixes === "string") {
+      podPrefixes = [podPrefixes];
+    }
+
+    moduleEntries = requirejs.entries;
+
+    var pluralizedType = parsedName.type + 's';
+    var name = parsedName.fullNameWithoutType;
+
+    Ember.assert('module prefix must be defined', prefixes);
+
+    for(var p = 0; p < podPrefixes.length; p++) {
+      // POD format
+      tmpModuleName = podPrefixes[p] + "/" + parsedName.fullNameWithoutType + "/" + parsedName.type;
+      if(moduleEntries[tmpModuleName]) {
+        str = require(tmpModuleName, null, null, true /* force sync */);
+        if(str && str["default"]) { str = str["default"];}
+        if(str) { _strs.push(str);}
+      }
+    }
+
+    if(!moduleName && name === 'main') {
+      for(p = 0; p < prefixes.length; p++) {
+        tmpModuleName = prefixes[p] + '/' + parsedName.type;
+        if (moduleEntries[tmpModuleName]) {
+          str = require(tmpModuleName, null, null, true /* force sync */);
+          if(str && str["default"]) { str = str["default"];}
+          if(str) { _strs.push(str);}
+        }
+      }
+    }
+
+    for(p = 0; p < prefixes.length; p++) {
+      tmpModuleName = prefixes[p] + "/" + pluralizedType + "/" + parsedName.fullNameWithoutType;
+      if(moduleEntries[tmpModuleName]) {
+        str = require(tmpModuleName, null, null, true /* force sync */);
+        if(str && str["default"]) { str = str["default"];}
+        if(str) {
+          _strs.push(str);
+        }
+      }
+    }
+
+    var str = {};
+
+    var _result = [];
+    _strs.forEach(function(_s) {
+        for(l in _s) {
+          str[l] = str[l] || {};
+          $.extend(str[l],_s[l]);
+        }
+    });
+
+    return str;
+  }
+
   function resolveOther(parsedName) {
     /*jshint validthis:true */
 
@@ -328,6 +394,7 @@ define("ember/resolver",
   //   https://github.com/emberjs/ember.js/blob/master/packages/ember-application/lib/system/resolver.js
   var Resolver = Ember.DefaultResolver.extend({
     resolveRouter: resolveRouter,
+    resolveString: resolveString,
     resolveMenu: resolveMenu,
     resolveOther: resolveOther,
     resolveTemplate: resolveOther,
