@@ -329,7 +329,7 @@ define("ember/resolver",
 
       moduleEntries = requirejs.entries;    
 
-      Ember.assert('module prefix must be defined', this.namespace.prefixes);
+      Ember.assert('module prefix must be defined', prefixes);
       var normalizedModuleName = this.findModuleName(parsedName);
 
       if (normalizedModuleName) {
