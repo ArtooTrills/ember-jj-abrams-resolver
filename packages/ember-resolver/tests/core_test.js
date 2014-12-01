@@ -1,6 +1,6 @@
 /*globals define registry requirejs */
 
-var Resolver, resolver;
+var Resolver, resolver, logCalls, originalLog;
 
 function lookupResolver() {
   return requirejs.entries['ember/resolver'];
@@ -63,6 +63,54 @@ test("can lookup something", function(){
   adapter();
 });
 
+test("can lookup something in another namespace", function(){
+  expect(2);
+
+  define('other/adapters/post', [], function(){
+    ok(true, "adapter was invoked properly");
+
+    return Ember.K;
+  });
+
+  var adapter = resolver.resolve('other@adapter:post');
+
+  ok(adapter, 'adapter was returned');
+
+  adapter();
+});
+
+test("can lookup a view in another namespace", function() {
+  expect(2);
+
+  define('other/views/post', [], function(){
+    ok(true, "view was invoked properly");
+
+    return Ember.K;
+  });
+
+  var view = resolver.resolve('view:other@post');
+
+  ok(view, 'view was returned');
+
+  view();
+});
+
+test("can lookup a view", function() {
+  expect(2);
+
+  define('appkit/views/queue-list', [], function(){
+    ok(true, "view was invoked properly");
+
+    return Ember.K;
+  });
+
+  var view = resolver.resolve('view:queue-list');
+
+  ok(view, 'view was returned');
+
+  view();
+});
+
 test("will return the raw value if no 'default' is available", function() {
   define('appkit/fruits/orange', [], function(){
     return 'is awesome';
@@ -82,10 +130,9 @@ test("will unwrap the 'default' export automatically", function(){
 test("router:main is hard-coded to prefix/router.js", function() {
   expect(1);
 
-  define('appkit/router', [], function(){    
-    return function() {
-      ok(true, 'router:main was looked up');
-    };
+  define('appkit/router', [], function(){
+    ok(true, 'router:main was looked up');
+    return 'whatever';
   });
 
   resolver.resolve('router:main');
@@ -162,6 +209,42 @@ test("can lookup templates via Ember.TEMPLATES", function() {
 
   var template = resolver.resolve('template:application');
   ok(template, 'template should resolve');
+});
+
+module("Logging", {
+  setup: function() {
+    originalLog = Ember.Logger.info;
+    logCalls = [];
+    Ember.Logger.info = function(arg) { logCalls.push(arg); };
+  },
+
+  teardown: function() {
+    Ember.Logger.info = originalLog;
+  }
+});
+
+test("logs lookups when logging is enabled", function() {
+  define('appkit/fruits/orange', [], function(){
+    return 'is logged';
+  });
+
+  Ember.ENV.LOG_MODULE_RESOLVER = true;
+
+  resolver.resolve('fruit:orange');
+
+  ok(logCalls.length, "should log lookup");
+});
+
+test("doesn't log lookups if disabled", function() {
+  define('appkit/fruits/orange', [], function(){
+    return 'is not logged';
+  });
+
+  Ember.ENV.LOG_MODULE_RESOLVER = false;
+
+  resolver.resolve('fruit:orange');
+
+  equal(logCalls.length, 0, "should not log lookup");
 });
 
 module("custom prefixes by type", {
@@ -265,24 +348,125 @@ test("will not use custom type prefix when using POD format", function() {
   resolver.resolve('controller:foo');
 });
 
-module("namespace array", {
-  setup: function() {
-    setupResolver({
-      namespace: {
-        modulePrefixes: ['app1','app2']
-      }
-    });
-  },
-
-  teardown: resetRegistry
-});
-
-test("will lookup names within namespace array", function() {
-
-  define('app2/controllers/foo/index', [], function(){
-    ok(true, 'app2/controllers was used');
+test("will lookup a components template without being rooted in `components/`", function() {
+  define('appkit/components/foo-bar/template', [], function(){
+    ok(false, 'appkit/components was used');
     return 'whatever';
   });
 
-  resolver.resolve('controller:foo/index');
+  define('appkit/foo-bar/template', [], function(){
+    ok(true, 'appkit/foo-bar/template was used');
+    return 'whatever';
+  });
+
+  resolver.resolve('template:components/foo-bar');
+});
+
+test("will use pods format to lookup components in components/", function() {
+  expect(2);
+
+  define('appkit/components/foo-bar/template', [], function(){
+    ok(true, 'appkit/components was used');
+    return 'whatever';
+  });
+
+  define('appkit/components/foo-bar/component', [], function(){
+    ok(true, 'appkit/components was used');
+    return 'whatever';
+  });
+
+  resolver.resolve('template:components/foo-bar');
+  resolver.resolve('component:foo-bar');
+});
+
+test("will not lookup routes in components/", function() {
+  expect(1);
+
+  define('appkit/components/foo-bar/route', [], function(){
+    ok(false, 'appkit/components was used');
+    return 'whatever';
+  });
+
+  define('appkit/routes/foo-bar', [], function(){
+    ok(true, 'appkit/routes was used');
+    return 'whatever';
+  });
+
+  resolver.resolve('route:foo-bar');
+});
+
+test("will not lookup non component templates in components/", function() {
+  expect(1);
+
+  define('appkit/components/foo-bar/template', [], function(){
+    ok(false, 'appkit/components was used');
+    return 'whatever';
+  });
+
+  define('appkit/templates/foo-bar', [], function(){
+    ok(true, 'appkit/templates was used');
+    return 'whatever';
+  });
+
+  resolver.resolve('template:foo-bar');
+});
+
+module("custom pluralization", {
+  teardown: resetRegistry
+});
+
+test("will use the pluralization specified for a given type", function() {
+  expect(1);
+
+  setupResolver({
+    namespace: {
+      modulePrefix: 'appkit'
+    },
+
+    pluralizedTypes: {
+      'sheep': 'sheep',
+      'octipus': 'octipii'
+    }
+  });
+
+  define('appkit/sheep/baaaaaa', [], function(){
+    ok(true, 'custom pluralization used');
+    return 'whatever';
+  });
+
+  resolver.resolve('sheep:baaaaaa');
+});
+
+test("will pluralize 'config' as 'config' by default", function() {
+  expect(1);
+
+  setupResolver();
+
+  define('appkit/config/environment', [], function(){
+    ok(true, 'config/environment is found');
+    return 'whatever';
+  });
+
+  resolver.resolve('config:environment');
+});
+
+test("'config' can be overridden", function() {
+  expect(1);
+
+  setupResolver({
+    namespace: {
+      modulePrefix: 'appkit'
+    },
+
+    pluralizedTypes: {
+      'config': 'super-duper-config'
+    }
+  });
+
+  define('appkit/super-duper-config/environment', [], function(){
+    ok(true, 'super-duper-config/environment is found');
+    return 'whatever';
+  });
+
+  resolver.resolve('config:environment');
 });
